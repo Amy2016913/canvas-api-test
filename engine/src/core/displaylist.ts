@@ -1,433 +1,374 @@
 namespace engine {
 
+    export abstract class DisplayObject implements Citizen, IDrawable, touchable {
+        protected _x: number;
+        protected _y: number;
+        protected _scaleX: number;
+        protected _scaleY: number;
+        protected _rotate: number;
+        protected dirty = true;
+        width: number;
+        height: number;
+        parent: IDrawable;
+        localMat: MathUtil.Matrix;
+        globalMat: MathUtil.Matrix;
+        listeners: TouchListener[];
+        protected _id: string;
+        touchEnabled = false;
+        alpha = 1;
+        color = "#000000";
+        displayType = "DisplayObject";
 
-export type MovieClipData = {
-
-        name: string,
-        frames: MovieClipFrameData[]
-}
-
-export type MovieClipFrameData = {
-        "image": string
-}
 
 
-export interface Drawable{
-    update(context2D : CanvasRenderingContext2D);
-}
-
-
-
-export abstract class DisplayObject implements Drawable{
-    type = "DisplayObject";
-    parent : DisplayObjectContainer;
-    alpha = 1;
-    globalAlpha = 1;
-    protected scaleX = 1;
-    protected scaleY = 1;
-    x = 0;
-    y = 0;
-    rotation = 0;
-    localMatrix = new Matrix();
-    globalMatrix = new Matrix();
-    listeners : TouchEvents[] = [];
-    protected width = 1;
-    protected height = 1;
-    touchEnabled = true;
-    public normalWidth = -1;
-    public normalHeight = -1;
-
-    constructor(type : string){
-        this.type = type;
-    }
-
-    setWidth(width : number){
-        this.width = width;
-    }
-    setHeight(height : number){
-        this.height = height;
-    }
-    setScaleX(scalex){
-        this.scaleX = scalex;
-        this.width = this.width * this.scaleX;
-    }
-    setScaleY(scaley){
-        this.scaleY = scaley;
-        this.height = this.height * this.scaleY;
-    }
-    getWidth(){
-        return this.width;
-    }
-    getHeight(){
-        return this.height;
-    }
-
-    update(){
-
-        if(this.normalWidth > 0){
-            this.scaleX = this.width / this.normalWidth;
+        protected calculateLocalMatrix() {
+            var transMat = MathUtil.move2Mat(this._x, this._y);
+            var rotateMat = MathUtil.rotate2Mat(this.rotate);
+            var scaleMat = MathUtil.scale2Mat(this._scaleX, this._scaleY);
+            this.localMat = transMat.multiply(rotateMat).multiply(scaleMat)
+                .multiply(MathUtil.identityMatrix(3));
         }
 
-        if(this.normalHeight > 0){
-            this.scaleY = this.height / this.normalHeight;
+        constructor(x: number, y: number, width: number, height: number) {
+            this._x = x;
+            this._y = y;
+            this._scaleX = 1;
+            this._scaleY = 1;
+            this._rotate = 0;
+            this.width = width;
+            this.height = height;
+            this.localMat = MathUtil.identityMatrix(3);
+            this.globalMat = MathUtil.identityMatrix(3);
+            this.listeners = [];
         }
 
-        this.localMatrix.updateFromDisplayObject(this.x,this.y,this.scaleX,this.scaleY,this.rotation);
-        if(this.parent){
-            this.globalAlpha = this.parent.globalAlpha * this.alpha;
-            this.globalMatrix = matrixAppendMatrix(this.localMatrix,this.parent.globalMatrix);
+        update(chain: DisplayObject[]): DisplayObject[] {
+            //local matrix
+            if (this.dirty)
+                this.calculateLocalMatrix();
+            this.dirty = false;
+            //global matrix
+            if (this.parent)
+                this.globalMat = this.localMat.multiply(this.parent.globalMat);
+            else
+                this.globalMat = this.localMat;
+            //add to chain
+            chain.push(this);
+
+            /*
+            //render settings
+            var m = this.globalMat.data;
+            context2D.setTransform(m[0][0], m[1][0], m[0][1], m[1][1], m[0][2], m[1][2]);
+            var alpha = context2D.globalAlpha;
+            context2D.globalAlpha = this.alpha * (this.parent ? this.parent.alpha : 1);
+            var color = context2D.fillStyle;
+            context2D.fillStyle = this.color;
+
+            //render
+            this.render();
+
+            context2D.globalAlpha = alpha;
+            context2D.fillStyle = color;
+            */
+            return chain;
         }
-        if(this.parent == null){
-            this.globalAlpha = this.alpha;
-            this.globalMatrix = this.localMatrix;
+
+        addEventListener(type: number, listener: Function, capture?: boolean, priority?: number) {
+            var event = new TouchListener(type, listener, capture, priority);
+            this.listeners.push(event);//todo check listeners
         }
-        // context2D.globalAlpha = this.globalAlpha;
-        // context2D.setTransform(this.globalMatrix.a,this.globalMatrix.b,this.globalMatrix.c,this.globalMatrix.d,this.globalMatrix.tx,this.globalMatrix.ty);
-        // this.render(context2D);
-    }
 
-    addEventListener(type : TouchEventsType,touchFunction : Function,object : any,ifCapture? : boolean,priority?: number){
-        var touchEvent = new TouchEvents(type,touchFunction,object,ifCapture,priority);
-        this.listeners.push(touchEvent);
-    }
+        protected render() { }
 
-    //abstract render(context2D : CanvasRenderingContext2D)
-
-    abstract hitTest(x : number,y : number):DisplayObject
-}
-
- export class DisplayObjectContainer extends DisplayObject{
-    childArray : DisplayObject[] = [];
-
-    constructor(){
-        super("DisplayObjectContainer");
-    }
-
-    update(){
-        super.update();
-        for(let child of this.childArray){
-            child.update();
+        hitTest(event: TouchEvent): DisplayObject[] {
+            if (this.touchEnabled || this.parent.touchEnabled) {
+                //矩阵逆变换
+                var inverseMat = this.globalMat.inverse();
+                var localClickMat = new MathUtil.Matrix(3, 1);
+                localClickMat.data[0][0] = event.stageX;
+                localClickMat.data[1][0] = event.stageY;
+                localClickMat.data[2][0] = 1;
+                localClickMat = inverseMat.multiply(localClickMat);
+                var localX = localClickMat.data[0][0];
+                var localY = localClickMat.data[1][0];
+                if (0 < localX &&
+                    localX < this.width &&
+                    0 < localY &&
+                    localY < this.height) {
+                    event.target = this;
+                    event.localX = localX;
+                    event.localY = localY;
+                    return [this];
+                }
+            }
+            else return null;
         }
-    }
 
-    addChild(child : DisplayObject){
-        this.childArray.push(child);
-        child.parent = this;
-    }
+        dispatchEvent(type: "capture" | "bubble", chain: DisplayObject[], event: TouchEvent) {
+            if (chain) {
+                var transformedChain = chain.slice(0);
+                if (type == "bubble") {
+                    transformedChain.reverse();
+                }
+                for (var i = 0; i < transformedChain.length; i++) {//逆向遍历点击事件链的元素
+                    var element = transformedChain[i];
+                    element.listeners.forEach((value) => {//每个元素派发事件
+                        var t = (type == "capture") ? value.capture : !value.capture;
+                        if (value.type == event.type && t) {
+                            //value.obj.func();todo更新func调用
+                            value.func(event);
+                        }
+                    });
+                }
+            } else
+                console.log("no chain");
+        }
 
-    removeChild(child : DisplayObject){
-        let i = 0
-        for(i = 0;i <= this.childArray.length - 1;i++){
-            if(this.childArray[i] == child){
-                break;
+        beginFill(color: string) {
+            this.color = color;
+        }
+
+        endFill() { }
+
+        get id(): string {
+            return this._id;
+        }
+        get x(): number {
+            return this._x;
+        }
+        get y(): number {
+            return this._y;
+        }
+        get scaleX(): number {
+            return this._scaleX;
+        }
+        get scaleY(): number {
+            return this._scaleY;
+        }
+        get rotate(): number {
+            return this._rotate;
+        }
+        set x(value) {
+            if (value != this._x) {
+                this._x = value;
+                this.dirty = true;
             }
         }
-        this.childArray.splice(i);
+        set y(value) {
+            if (value != this._y) {
+                this._y = value;
+                this.dirty = true;
+            }
+        }
+        set scaleX(value) {
+            if (value != this._scaleX) {
+                this._scaleX = value;
+                this.dirty = true;
+            }
+        }
+        set scaleY(value) {
+            if (value != this._scaleY) {
+                this._scaleY = value;
+                this.dirty = true;
+            }
+        }
+        set rotate(value) {
+            if (value != this._rotate) {
+                this._rotate = value;
+                this.dirty = true;
+            }
+        }
+        /*set height(value) {
+            if (this._height) {
+                this.scaleY = value / this._height * this._scaleY;
+                this._height = value;
+            } else {
+                this._height = value;
+            }
+        }
+        set width(value) {
+            if (this._width) {
+                this.scaleX = value / this._width * this._scaleX;
+            this._width = value;
+            } else {
+                this._width = 0;
+            }
+        }*/
     }
 
-    // render(context2D : CanvasRenderingContext2D){
-    //     for(let displayObject of this.childArray){
-    //         displayObject.draw(context2D);
-    //     }
-    // }
+    export class ShapeDisplayObject extends DisplayObject {
 
-    hitTest(x : number,y: number) : DisplayObject{
-    if(this.touchEnabled){
-        var rect = new Rectangle();
-        rect.x = rect.y = 0;
-        rect.width = this.getWidth();
-        rect.height = this.getHeight();
-        var result = null;
-        if(rect.isPointInRectangle(x,y)){
-            result = this;
-            TouchEventService.getInstance().addPerformer(this);//从父到子把相关对象存入数组
+        update(chain: DisplayObject[]): DisplayObject[] {
+            super.update(chain);
+            this.color = this.parent.color;
+            return chain;
+        }
+    }
+
+    export class Rectangle extends ShapeDisplayObject {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        displayType = "Rectangle";
+
+        render() {
+            context2D.fillRect(0, 0, this.width, this.height);
+        }
+    }
+
+    export class Bitmap extends DisplayObject implements IBitmap {
+        _texture: Texture;
+        width: number;
+        height: number;
+        private static count = 0;
+        displayType = "Bitmap";
+
+        get texture() {
+            return this._texture;
+        }
+
+        set texture(value) {
+            // todo 优化加载：等新图片加载完成再更换图片
+            this._texture = value;
+            if (value) {
+                this.width = value.width;
+                this.height = value.height;
+            }
+        }
+
+        constructor(texture?: string | Texture) {
+            super(0, 0, 0, 0);
+            this._texture = null;
+            if (texture instanceof Texture) {
+                this.texture = texture;
+            } else if (texture)
+                this.texture = RES.getRes(texture);
+            //generate ID
+            this._id = IDs.PICTURE_ID + Bitmap.count;
+            Bitmap.count++;
+
+        }
 
 
-            for(let i = this.childArray.length - 1;i >= 0;i--){
-                var child = this.childArray[i];
-                var point = new Point(x,y);
-                var invertChildenLocalMatirx = invertMatrix(child.localMatrix);
-                var pointBasedOnChild = pointAppendMatrix(point,invertChildenLocalMatirx);
-                var hitTestResult = child.hitTest(pointBasedOnChild.x,pointBasedOnChild.y);
-                if(hitTestResult){
-                    result = hitTestResult;
-                    break;
+        protected render() {
+            try {
+                if (this.texture)
+                    context2D.drawImage(this.texture.data, 0, 0);
+            } catch (e) { }
+        }
+    }
+
+    export class Texture extends DisplayObject implements ITexture {
+        data;
+        constructor() {
+            super(0, 0, 0, 0);
+        }
+    }
+
+    export class TextField extends DisplayObject {
+        // size: number;
+        //maxWidth: number;
+        fontSize: number = 15;
+        text: string;
+        private static count = 0;
+        bold: boolean = false;
+        displayType = "TextField";
+
+        constructor() {
+            super(0, 0, 0, 0);
+            this._id = IDs.TEXT_ID + TextField.count;
+            this.height = 20;//todo
+            TextField.count++;
+        }
+
+        protected render() {
+            //  var font = this.context.font;
+            context2D.font = (this.bold ? "bold " : "") + this.fontSize + "px Verdana";
+            context2D.fillText(this.text, 0, 0);
+            //  this.context.font = font;
+        }
+
+
+    }
+
+    export class DisplayObjectContainer extends DisplayObject {
+        children: DisplayObject[] = [];
+        private static count = 0;
+        displayType = "DisplayObjectContainer";
+
+        constructor() {
+            super(0, 0, 0, 0);
+            this._id = IDs.CONTAINER_ID + DisplayObjectContainer.count;
+            DisplayObjectContainer.count++;
+            this.touchEnabled = true;
+        }
+
+        addChild(drawable: DisplayObject) {
+            this.children.push(drawable);
+            drawable.parent = this;
+            if (drawable.x + drawable.width > this.width)
+                this.width = drawable.x + drawable.width;
+            if (drawable.y + drawable.height > this.height)
+                this.height = drawable.y + drawable.height;
+        }
+
+        removeChild(child: DisplayObject) {
+            var index = this.children.indexOf(child);
+            this.children.splice(index, 1);
+        }
+
+        removeChildren() {
+            this.children.splice(0);
+        }
+
+        update(chain: DisplayObject[]): DisplayObject[] {
+            super.update(chain);
+            this.children.forEach((value) => {
+                value.update(chain);
+            });
+            return chain;
+        }
+
+        hitTest(event: TouchEvent): DisplayObject[] {
+            var result: DisplayObject[];
+            //执行孩子的检测，储存最后一个（…）碰到的物体
+            for (var i = 0; i < this.children.length; i++) {
+                result = this.children[i].hitTest(event);
+                if (result) {
+                    result.unshift(this);
+                    return result;
                 }
             }
             return result;
         }
-
-        return null;
-    }
-    }
-}
-
-export class Stage extends engine.DisplayObjectContainer{
-    static stageX = 0;
-    static stageY = 0;
-    static instance : Stage;
-
-    static getInstance(){
-        if(this.instance == null){
-            Stage.instance = new Stage();
-        }
-        return Stage.instance;
-    }
-}
-
-export class TextField extends DisplayObject{
-
-    text = "";
-    textColor = "#000000";
-    size = 18;
-    typeFace = "Arial";
-    textType = "18px Arial";
-
-    constructor(){
-        super("TextField");
-    }
-    
-
-
-    // render(context2D : CanvasRenderingContext2D){
-    //     context2D.fillStyle = this.textColor;
-    //     context2D.font = this.textType;
-    //     context2D.fillText(this.text,0,0 + this.size);
-    // }
-
-    hitTest(x : number,y :number){
-        if(this.touchEnabled){
-        var rect = new Rectangle();
-        rect.x = rect.y = 0;
-        rect.width = this.size * this.text.length;
-        rect.height = this.size;
-        if(rect.isPointInRectangle(x,y)){
-            TouchEventService.getInstance().addPerformer(this);
-            return this;
-        }
-        else{
-            return null;
-        }
-        }
     }
 
-    setText(text){
-        this.text = text;
-    }
+    export class Shape extends DisplayObjectContainer {
+        //private static count = 0;
+        children: ShapeDisplayObject[];
+        displayType = "Shape";
 
-    setX(x){
-        this.x = x;
-    }
-
-    setY(y){
-        this.y = y;
-    }
-
-    setTextColor(color){
-        this.textColor = color;
-    }
-
-    setSize(size){
-        this.size = size;
-        this.textType = this.size.toString() + "px " + this.typeFace;
-    }
-
-    setTypeFace(typeFace){
-        this.typeFace = typeFace;
-        this.textType = this.size.toString() + "px " + this.typeFace;
-    }
-}
-
-export class Bitmap extends DisplayObject{
-
-    imageID = "";
-    texture ;
-
-
-    constructor(imageID? : string){
-        super("Bitmap");
-        this.imageID = imageID;
-        // this.texture = new Image();
-        // this.texture.src = this.imageID;
-        // this.texture.onload = () =>{
-        //     this.width = this.texture.width;
-        //     this.height = this.texture.height;
-        // }
-        RES.getRes(imageID).then((value)=>{
-            this.texture = value;
-            this.setWidth(this.texture.width);
-            this.setHeight(this.texture.height);
-            this.normalWidth = this.texture.width;
-            this.normalHeight = this.texture.height;
-            // this.width = this.texture.width;
-            // this.height = this.texture.height;
-            // this.image = this.texture.data;
-            console.log("load complete "+value);
-            // console.log(this.width + " hi! " + this.height);
-        })
-    }
-
-
-    // render(context2D : CanvasRenderingContext2D){
-    //     if(this.texture){
-    //         this.normalWidth = this.texture.width;
-    //         this.normalHeight = this.texture.height;
-    //         context2D.drawImage(this.texture,0,0);
-    //     }
-    //     // else{
-    //     //     this.texture.onload = () =>{
-    //     //         context2D.drawImage(this.texture,0,0);
-    //     //     }
-    //     // }
-    // }
-
-    hitTest(x : number,y :number){
-        if(this.touchEnabled){
-        var rect = new Rectangle();
-        rect.x = rect.y = 0;
-        rect.width = this.width;
-        rect.height = this.height;
-        if(rect.isPointInRectangle(x,y)){
-            TouchEventService.getInstance().addPerformer(this);
-            return this;
-        }
-        else{
-            return null;
-        }
-        }
-    }
-
-    // setImage(text){
-    //     this.imageID = text;
-    // }
-
-    setX(x){
-        this.x = x;
-    }
-
-    setY(y){
-        this.y = y;
-    }
-    // setWidth(width : number){
-    //     this.width = width;
-    //     this.scaleX = this.width / this.texture.width;
-    // }
-    // setHeight(height : number){
-    //     this.height = height;
-    //     this.scaleY = this.height / this.texture.height;
-    // }
-
-    
-
-}
-
-export class Shape extends DisplayObjectContainer{
-
-    graphics : Graphics = new Graphics();
-
-}
-
-export class Graphics extends DisplayObjectContainer{
-
-    fillColor = "#000000";
-    alpha = 1;
-    globalAlpha = 1;
-    strokeColor = "#000000";
-    lineWidth = 1;
-    lineColor = "#000000";
-    
-
-    beginFill(color,alpha){
-        this.fillColor = color;
-        this.alpha = alpha;
-    }
-
-    endFill(){
-        this.fillColor = "#000000";
-        this.alpha = 1;
-    }
-
-    
-    drawRect(x1,y1,x2,y2,context2D : CanvasRenderingContext2D){
-        context2D.globalAlpha = this.alpha;
-        context2D.fillStyle = this.fillColor;
-        context2D.fillRect(x1,y1,x2,y2);
-        context2D.fill();
-    }
-
-    drawCircle(x,y,rad,context2D : CanvasRenderingContext2D){
-        context2D.fillStyle = this.fillColor;
-        context2D.globalAlpha = this.alpha;
-        context2D.beginPath();
-        context2D.arc(x,y,rad,0,Math.PI*2,true);
-        context2D.closePath();
-        context2D.fill();
-    }
-
-    drawArc(x,y,rad,beginAngle,endAngle,context2D : CanvasRenderingContext2D){
-        context2D.strokeStyle = this.strokeColor;
-        context2D.globalAlpha = this.alpha;
-        context2D.beginPath();
-        context2D.arc(x,y,rad,beginAngle,endAngle,true);
-        context2D.closePath();
-        context2D.stroke();
-    }
-    
-}
-
-
-export  class MovieClip extends Bitmap {
-
-        private advancedTime: number = 0;
-
-        private static FRAME_TIME = 20;
-
-        private static TOTAL_FRAME = 10;
-
-        private currentFrameIndex: number;
-
-        private data: MovieClipData;
-
-        constructor(data: MovieClipData) {
-            super(null);
-            this.setMovieClipData(data);
-            this.play();
+        update(chain: DisplayObject[]): DisplayObject[] {
+            super.update(chain);
+            this.children.forEach((value) => { value.update(chain) });
+            return chain;
         }
 
-        ticker = (deltaTime) => {
-            // this.removeChild();
-            this.advancedTime += deltaTime;
-            if (this.advancedTime >= MovieClip.FRAME_TIME * MovieClip.TOTAL_FRAME) {
-                this.advancedTime -= MovieClip.FRAME_TIME * MovieClip.TOTAL_FRAME;
-            }
-            this.currentFrameIndex = Math.floor(this.advancedTime / MovieClip.FRAME_TIME);
-
-            let data = this.data;
-
-            let frameData = data.frames[this.currentFrameIndex];
-            let url = frameData.image;
+        drawRect(x: number, y: number, width: number, height: number) {
+            this.addChild(new Rectangle(x, y, width, height));
+            this.width += width;
+            this.height += height;
         }
 
-        play() {
-            Ticker.getInstance().register(this.ticker);
-        }
-
-        stop() {
-            Ticker.getInstance().unregister(this.ticker)
-        }
-
-        setMovieClipData(data: MovieClipData) {
-            this.data = data;
-            this.currentFrameIndex = 0;
-            // 创建 / 更新 
-
+        hitTest(event: TouchEvent): DisplayObject[] {
+            var result;
+            this.children.forEach((value) => {
+                var temp = value.hitTest(event);
+                if (temp)
+                    result = temp;
+            })
+            return result;
         }
     }
-
-    export class Texture{
-        data: HTMLImageElement;
-        width: number;
-        height: number;
-    }
-
 }

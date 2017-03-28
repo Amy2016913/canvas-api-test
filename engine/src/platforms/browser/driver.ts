@@ -1,135 +1,83 @@
+//import Main from '././././test/src/Main'
 namespace engine {
-    export let run = (canvas: HTMLCanvasElement) => {
+    var stage;
+    export function click(x: number, y: number) {
+        var clickEvent = new TouchEvent(x, y, TouchEvent.CLICK)
+        var clickChain = stage.hitTest(clickEvent);
+        stage.dispatchEvent("capture", clickChain, clickEvent);
+        stage.dispatchEvent("bubble", clickChain, clickEvent);
+    }
 
-        var stage = engine.Stage.getInstance();
-        stage.setWidth(canvas.width);
-        stage.setHeight(canvas.height);
-        let context2D = canvas.getContext("2d");
-        let renderer = new CanvasRenderer(stage,context2D);
-        var currentTarget;                      //鼠标点击时当前的对象
-        var startTarget;                        //mouseDown时的对象
-        var isMouseDown = false;
-        var startPoint = new Point(-1,-1);
-        var movingPoint = new Point(0,0);
-        let lastNow = Date.now();
-        let frameHandler = () => {
-            let now = Date.now();
-            let deltaTime = now - lastNow;
-            Ticker.getInstance().notify(deltaTime);
-            context2D.clearRect(0, 0, stage.getWidth(), stage.getHeight());
-            context2D.save();
-            stage.update();
-            renderer.render();
-            context2D.restore();
-            lastNow = now;
+    export let run = function (main) {
+
+        // canvas = document.createElement("canvas") as Canvas;
+        canvas = new Canvas();
+        canvas.data = document.getElementById('app');
+        //var objBody = document.getElementsByTagName("body").item(0);
+        // objBody.appendChild(canvas as HTMLCanvasElement);  
+
+        //canvas = new Canvas();
+        stage = main;
+        stage.width = canvas.width;
+        stage.height = canvas.height;
+
+        //读取资源
+        RES.loadConfig(() => {
+            //创建场景
+            stage.createGameScene(canvas);
+            //获取上下文
+            context2D = canvas.getContext('2d');
+            let lastNow = Date.now();
+            //进入主循环
+            let frameHandler = () => {
+                //时间
+                let now = Date.now();
+                let deltaTime = now - lastNow;
+                Ticker.getInstance().notify(deltaTime);
+
+                //绘制
+                context2D.clearRect(0, 0, canvas.width, canvas.height);
+                var drawChain: DisplayObject[] = [];
+                drawChain = stage.update(drawChain);
+                context2D.draw(drawChain);
+
+
+                lastNow = now;
+                window.requestAnimationFrame(frameHandler);
+            }
             window.requestAnimationFrame(frameHandler);
-        }
 
-        window.requestAnimationFrame(frameHandler);
 
-        window.onmousedown = (e) =>{
-        let x = e.offsetX - 3;
-        let y = e.offsetY - 3;
-        TouchEventService.stageX = x;
-        TouchEventService.stageY = y;
-        Stage.stageX = TouchEventService.stageX;
-        Stage.stageY = TouchEventService.stageY;
-        startPoint.x = x;
-        startPoint.y = y;
-        movingPoint.x = x;
-        movingPoint.y = y;
-        TouchEventService.currentType = TouchEventsType.MOUSEDOWN;
-        currentTarget = stage.hitTest(x,y);
-        startTarget = currentTarget;
-        TouchEventService.getInstance().toDo();
-        isMouseDown = true;
-    }
+        });
 
-    window.onmouseup = (e) =>{
-        let x = e.offsetX - 3;
-        let y = e.offsetY - 3;
-        TouchEventService.stageX = x;
-        TouchEventService.stageY = y;
-        Stage.stageX = TouchEventService.stageX;
-        Stage.stageY = TouchEventService.stageY;
-        var target = stage.hitTest(x,y);
-        if(target == currentTarget){
-            TouchEventService.currentType = TouchEventsType.CLICK;
-        }
-        else{
-            TouchEventService.currentType = TouchEventsType.MOUSEUP
-        }
-        TouchEventService.getInstance().toDo();
-        currentTarget = null;
-        isMouseDown = false;
-    }
 
-    window.onmousemove = (e) =>{
-        if(isMouseDown){
-            let x = e.offsetX - 3;
-            let y = e.offsetY - 3;
-            TouchEventService.stageX = x;
-            TouchEventService.stageY = y;
-            Stage.stageX = TouchEventService.stageX;
-            Stage.stageY = TouchEventService.stageY;
-            TouchEventService.currentType = TouchEventsType.MOUSEMOVE;
-            currentTarget = stage.hitTest(x,y);
-            TouchEventService.getInstance().toDo();
-            movingPoint.x = x;
-            movingPoint.y = y;
-
-        }
-    }
-
-        return stage;
-
-    }
-
-    class CanvasRenderer{
-        constructor(private stage: DisplayObjectContainer, private context2D: CanvasRenderingContext2D) {
-
-        }
-
-        render() {
-            let stage = this.stage;
-            let context2D = this.context2D;
-            this.renderContainer(stage);
-        }
-
-        renderContainer(container: DisplayObjectContainer) {
-            for (let child of container.childArray) {
-                let context2D = this.context2D;
-                context2D.globalAlpha = child.globalAlpha;
-                let m = child.globalMatrix;
-                context2D.setTransform(m.a, m.b, m.c, m.d, m.tx, m.ty);
-
-                if (child.type == "Bitmap") {
-                    this.renderBitmap(child as Bitmap);
-                }
-                else if (child.type == "TextField") {
-                    this.renderTextField(child as TextField);
-                }
-                else if (child.type == "DisplayObjectContainer") {
-                    this.renderContainer(child as DisplayObjectContainer);
-                }
+        //鼠标按下
+        window.onmousedown = (down) => {
+            var downEvent = new TouchEvent(down.offsetX, down.offsetY, TouchEvent.MOUSEDOWN)
+            var downChain = stage.hitTest(downEvent);
+            stage.dispatchEvent("capture", downChain, downEvent);
+            stage.dispatchEvent("bubble", downChain, downEvent);
+            //鼠标抬起
+            window.onmouseup = (up) => {
+                var upEvent = new TouchEvent(down.offsetX, down.offsetY, TouchEvent.MOUSEUP)
+                var upChain = stage.hitTest(upEvent);
+                stage.dispatchEvent("capture", upChain, upEvent);
+                stage.dispatchEvent("bubble", upChain, upEvent);
+                //比较鼠标是否点击同一物体
+                try {
+                    if (downChain[downChain.length - 1].id == upChain[upChain.length - 1].id) {
+                        //鼠标点击
+                        var clickEvent = new TouchEvent(up.offsetX, up.offsetY, TouchEvent.CLICK)
+                        var clickChain = stage.hitTest(clickEvent);
+                        stage.dispatchEvent("capture", clickChain, clickEvent);
+                        stage.dispatchEvent("bubble", clickChain, clickEvent);
+                    }
+                } catch (e) { }
             }
+            window.onmouseleave = (leave) => { }
         }
 
-        renderBitmap(bitmap : Bitmap){
-            if(bitmap.texture){
-                bitmap.normalWidth = bitmap.texture.width;
-                bitmap.normalHeight = bitmap.texture.height;
-                this.context2D.drawImage(bitmap.texture,0,0);
-            }
-        }
 
-        renderTextField(textField : TextField){
-            this.context2D.fillStyle = textField.textColor;
-            this.context2D.font = textField.textType;
-            this.context2D.fillText(textField.text,0,0 + textField.size);
-        }
     }
-
-
 
 }

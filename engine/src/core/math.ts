@@ -1,132 +1,236 @@
 namespace engine {
 
-    export class Point {
-        x: number;
-        y: number;
-        constructor(x: number, y: number) {
-            this.x = x;
-            this.y = y;
+    export namespace MathUtil {
+        export class Matrix {
+            data: number[][];
+
+            get degreeI(): number {
+                return this.data.length;
+            }
+
+            get degreeJ(): number {
+                return this.data[0].length;
+            }
+
+            row(r: number): Vector {
+                if (this.data[r]) {
+                    return new Vector(this.data[r]);
+                }
+                else {
+                    console.error("wrong row");
+                    return null;
+                }
+            }
+
+            column(c: number): Vector {
+                if (this.degreeJ <= c) {
+                    console.error("wrong column");
+                    return null;
+                }
+                var ctemp = [];
+                this.data.forEach((value) => {
+                    ctemp.push(value[c]);
+                })
+                return new Vector(ctemp);
+            }
+
+            constructor(degreeI: number, degreeJ: number) {
+                this.data = [];
+                for (var i = 0; i < degreeI; i++) {
+                    this.data.push([]);
+                    for (var j = 0; j < degreeJ; j++) {
+                        this.data[i].push(0);
+                    }
+                }
+            }
+
+            /**a.multiply(b) == a*b  */
+            multiply(other: Matrix): Matrix {
+                if (this.degreeJ != other.degreeI)
+                    return null;
+                var result = new Matrix(this.degreeI, other.degreeJ);
+                var temp = 0;
+                for (var i = 0; i < this.degreeI; i++) {
+                    for (var j = 0; j < other.degreeJ; j++) {
+                        result.data[i][j] = this.row(i).dotProduct(other.column(j));
+                    }
+                }
+                return result;
+            }
+
+            get a(): number { return this.data[0][0]; }
+            get b(): number { return this.data[1][0]; }
+            get c(): number { return this.data[0][1]; }
+            get d(): number { return this.data[1][1]; }
+            get tx(): number { return this.data[0][2]; }
+            get ty(): number { return this.data[1][2]; }
+            set a(value: number) { this.data[0][0] = value; }
+            set b(value: number) { this.data[1][0] = value; }
+            set c(value: number) { this.data[0][1] = value; }
+            set d(value: number) { this.data[1][1] = value; }
+            set tx(value: number) { this.data[0][2] = value; }
+            set ty(value: number) { this.data[1][2] = value; }
+
+            inverse(): Matrix {
+                var m = this;
+                var a = m.a;
+                var b = m.b;
+                var c = m.c;
+                var d = m.d;
+                var tx = m.tx;
+                var ty = m.ty;
+
+                var determinant = a * d - b * c;
+                var result = identityMatrix(3);
+                if (determinant == 0) {
+                    throw new Error("no invert");
+                }
+
+                determinant = 1 / determinant;
+                var k = result.a = d * determinant;
+                b = result.b = -b * determinant;
+                c = result.c = -c * determinant;
+                d = result.d = a * determinant;
+                result.tx = -(k * tx + c * ty);
+                result.ty = -(b * tx + d * ty);
+                return result;
+
+            }
+            /* inverse(): Matrix {
+                 var result = new Matrix(this.degreeI, this.degreeI);
+                 var i_s = [0, 0, 0];
+                 var j_s = [0, 0, 0];
+                 var m = this.data;
+                 var fDet = 1;
+                 var f = 1;
+                 for (var k = 0; k < this.degreeI; k++) {
+                     // 第一步，全选主元
+                     var fMax = 0;
+                     for (var i = k; i < this.degreeI; i++) {
+                         for (var j = k; j < this.degreeJ; j++) {
+                             var f = Math.abs(m[i][j]);
+                             if (f > fMax) {
+                                 fMax = f;
+                                 i_s[k] = i;
+                                 j_s[k] = j;
+                             }
+                         }
+                     }
+                     if (Math.abs(fMax) < 0.0001)
+                         return null;
+                     if (i_s[k] != k) {
+                         f = -f;
+                         swap(m[k][0], m[i_s[k]][0]);
+                         swap(m[k][1], m[i_s[k]][1]);
+                         swap(m[k][2], m[i_s[k]][2]);
+                     }
+                     if (j_s[k] != k) {
+                         f = -f;
+                         swap(m[0][k], m[0][j_s[k]]);
+                         swap(m[1][k], m[1][j_s[k]]);
+                         swap(m[2][k], m[2][j_s[k]]);
+                     }
+                     //计算行列式
+                     fDet *= m[k][k];
+                     //计算逆矩阵
+                     //step 2
+                     m[k][k] = 1 / m[k][k];
+                     //step 3
+                     for (var i = 0; i < this.degreeI; i++){
+                         if(i != k)
+                         m[k][i] *= m[k][k];
+                     }
+                     //step 4
+                     for(var i = 0;i < this.degreeI;i++){
+                         if( i != k){
+                             for(j = 0; j < 3; j++){
+                                 if(j != k)
+                                     m[i][j] = m[i][j] - m[i][k] * m[k][j];
+                             }
+                         }
+                     }
+                     //step 5
+                     for(i = 0; i<this.degreeI;i++){
+                         if(i != k)
+                         m[i][k] *= (-m[k][k]);
+                     }
+                 }
+                 for( k = this.degreeI -1;k>=0;k--){
+                     if(j_s[k] != k){
+                         swap(m[k][0],m[j_s[k]][0]);
+                         swap(m[k][1],m[j_s[k]][1]);
+                         swap(m[k][2],m[j_s[k]][2]);
+                     }
+                     if(i_s[k]!=k){
+                         swap(m[0][k],m[0][i_s[k]]);
+                         swap(m[1][k],m[1][i_s[k]]);
+                         swap(m[2][k],m[2][i_s[k]]);
+                     }
+                 }
+     
+                 return result;
+             }*/
         }
-    }
 
-    export class Rectangle {
-
-        x = 0;
-        y = 0;
-        width = 1;
-        height = 1;
-        isPointInRectangle(x : number,y:number) {
-            var point = new Point(x,y);
-            var rect = this;
-            if(point.x < rect.x + rect.width &&
-               point.x > rect.x &&
-               point.y < rect.y + rect.height &&
-               point.y > rect.y){
-                   return true;
-               }
-               else{
-                   return false;
-               }
+        export function swap(a, b) {
+            var temp = a;
+            a = b;
+            b = temp;
         }
-    }
-
-    export function pointAppendMatrix(point: Point, m: Matrix): Point {
-        var x = m.a * point.x + m.c * point.y + m.tx;
-        var y = m.b * point.x + m.d * point.y + m.ty;
-        return new Point(x, y);
-
-    }
-
-    /**
-     * 使用伴随矩阵法求逆矩阵
-     * http://wenku.baidu.com/view/b0a9fed8ce2f0066f53322a9
-     */
-    export function invertMatrix(m: Matrix): Matrix {
-
-
-        var a = m.a;
-        var b = m.b;
-        var c = m.c;
-        var d = m.d;
-        var tx = m.tx;
-        var ty = m.ty;
-
-        var determinant = a * d - b * c;
-        var result = new Matrix(1, 0, 0, 1, 0, 0);
-        if (determinant == 0) {
-            throw new Error("no invert");
+        export function identityMatrix(degree: number): Matrix {
+            var result = new Matrix(degree, degree);
+            for (var i = 0; i < degree; i++) {
+                for (var j = 0; j < degree; j++) {
+                    result.data[i][j] = (i == j ? 1 : 0);
+                }
+            }
+            return result;
         }
 
-        determinant = 1 / determinant;
-        var k = result.a = d * determinant;
-        b = result.b = -b * determinant;
-        c = result.c = -c * determinant;
-        d = result.d = a * determinant;
-        result.tx = -(k * tx + c * ty);
-        result.ty = -(b * tx + d * ty);
-        return result;
-
-    }
-
-    export function matrixAppendMatrix(m1: Matrix, m2: Matrix): Matrix {
-
-        var result = new Matrix();
-        result.a = m1.a * m2.a + m1.b * m2.c;
-        result.b = m1.a * m2.b + m1.b * m2.d;
-        result.c = m2.a * m1.c + m2.c * m1.d;
-        result.d = m2.b * m1.c + m1.d * m2.d;
-        result.tx = m2.a * m1.tx + m2.c * m1.ty + m2.tx;
-        result.ty = m2.b * m1.tx + m2.d * m1.ty + m2.ty;
-        return result;
-    }
-
-    var PI = Math.PI;
-    var HalfPI = PI / 2;
-    var PacPI = PI + HalfPI;
-    var TwoPI = PI * 2;
-    var DEG_TO_RAD: number = Math.PI / 180;
-
-
-    export class Matrix {
-
-        constructor(a: number = 1, b: number = 0, c: number = 0, d: number = 1, tx: number = 0, ty: number = 0) {
-            this.a = a;
-            this.b = b;
-            this.c = c;
-            this.d = d;
-            this.tx = tx;
-            this.ty = ty;
+        export function move2Mat(x: number, y: number): Matrix {
+            var result = identityMatrix(3);
+            result.data[0][2] = x;
+            result.data[1][2] = y;
+            return result;
         }
 
-        public a: number;
-
-        public b: number;
-
-        public c: number;
-
-        public d: number;
-
-        public tx: number;
-
-        public ty: number;
-
-        public toString(): string {
-            return "(a=" + this.a + ", b=" + this.b + ", c=" + this.c + ", d=" + this.d + ", tx=" + this.tx + ", ty=" + this.ty + ")";
+        export function rotate2Mat(eularDegree: number): Matrix {
+            var result = identityMatrix(3);
+            result.data[0][0] = Math.cos(eularDegree);
+            result.data[1][0] = Math.sin(eularDegree);
+            result.data[0][1] = -Math.sin(eularDegree);
+            result.data[1][1] = Math.cos(eularDegree);
+            return result;
         }
 
-        updateFromDisplayObject(x: number, y: number, scaleX: number, scaleY: number, rotation: number) {
-            this.tx = x;
-            this.ty = y;
-            var skewX, skewY;
-            skewX = skewY = rotation / 180 * Math.PI;
+        export function scale2Mat(x: number, y: number): Matrix {
+            var result = identityMatrix(3);
+            result.data[0][0] = x;
+            result.data[1][1] = y;
+            return result;
+        }
 
-            var u = Math.cos(skewX);
-            var v = Math.sin(skewX);
-            this.a = Math.cos(skewY) * scaleX;
-            this.b = Math.sin(skewY) * scaleX;
-            this.c = -v * scaleY;
-            this.d = u * scaleY;
+        export class Vector {
+            data: number[] = [];
 
+            get degree(): number {
+                return this.data.length;
+            }
+
+            constructor(num: number[]) {
+                num.forEach((value) => { this.data.push(value) });
+            }
+
+            dotProduct(other: Vector): number {
+                if (this.degree != other.degree) {
+                    console.error("wrong degree,num1 degree:" + this.degree + ", num2 degree:" + other.degree);
+                    return;
+                }
+                var result = 0;
+                for (var i = 0; i < this.degree; i++)
+                    result += this.data[i] * other.data[i];
+                return result;
+            }
         }
     }
 }
